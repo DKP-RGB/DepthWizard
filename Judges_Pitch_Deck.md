@@ -1,4 +1,4 @@
-# DepthWizard: Single-View 3D Terrain Reconstruction
+# DepthWizard: Single-View 3D Terrain Reconstructions
 **Comprehensive Technical Document & ISRO Hackathon Pitch**
 
 ---
