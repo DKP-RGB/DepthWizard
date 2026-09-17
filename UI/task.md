@@ -1,0 +1,14 @@
+- [x] 1. Fix Upload and Demo Flow
+  - [x] Update `accept` attribute in `Landing.jsx` to properly show `.tif` files
+  - [x] Update "Try Demo" to use a real local image (`demo/new-york.jpg`)
+  - [x] Implement the "Load a Scene" modal UI from screenshot 2 and 3
+- [x] 2. Update Processing Modal
+  - [x] Implement the "Reconstructing Scene" overlay to match screenshot 4 exactly
+- [x] 3. 3D Visualization Shaders (`Scene.jsx`)
+  - [x] Implement Depth Heatmap Shader (Screenshot 6)
+  - [x] Implement Metric DSM Elevation Shader (Screenshot 7)
+  - [x] Implement Hybrid texture + wireframe shader (Screenshot 8)
+  - [x] Implement Contour generation shader
+- [x] 4. UI Refinements
+  - [x] Fix Dashboard Top Bar styling and text
+  - [x] Verify Sidebar styling matches exact padding, font sizes, and colors

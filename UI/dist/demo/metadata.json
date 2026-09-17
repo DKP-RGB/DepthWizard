@@ -1,0 +1,37 @@
+[
+  {
+    "filename": "new-york.jpg",
+    "title": "New York City Aerial",
+    "description": "Dense urban environment with skyscrapers and coastal elements.",
+    "source": "AI Generated (Realistic Satellite Synthesis)",
+    "license": "Public Domain / CC0 (Generated)"
+  },
+  {
+    "filename": "delhi.jpg",
+    "title": "New Delhi Aerial",
+    "description": "Chaotic, tightly packed buildings with irregular street patterns.",
+    "source": "AI Generated (Realistic Satellite Synthesis)",
+    "license": "Public Domain / CC0 (Generated)"
+  },
+  {
+    "filename": "mumbai.jpg",
+    "title": "Mumbai Aerial",
+    "description": "Coastal megacity showing dense slums alongside high-rises.",
+    "source": "AI Generated (Realistic Satellite Synthesis)",
+    "license": "Public Domain / CC0 (Generated)"
+  },
+  {
+    "filename": "bhopal.jpg",
+    "title": "Bhopal Aerial",
+    "description": "Mixed urban environment with large lakes and vegetation.",
+    "source": "AI Generated (Realistic Satellite Synthesis)",
+    "license": "Public Domain / CC0 (Generated)"
+  },
+  {
+    "filename": "bengaluru.jpg",
+    "title": "Bengaluru Aerial",
+    "description": "High-density tech city with wide roads and significant tree cover.",
+    "source": "AI Generated (Realistic Satellite Synthesis)",
+    "license": "Public Domain / CC0 (Generated)"
+  }
+]
