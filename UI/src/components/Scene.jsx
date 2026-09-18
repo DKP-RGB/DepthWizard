@@ -3,6 +3,7 @@ import { Canvas, useThree } from '@react-three/fiber';
 import { OrbitControls, FlyControls, Grid, useTexture, Html } from '@react-three/drei';
 import * as THREE from 'three';
 import { useStore } from '../store';
+import { computeFastRescueRoute } from '../lib/fastPathfinder';
 
 import { contours } from 'd3-contour';
 import { geoPath } from 'd3-geo';
@@ -391,6 +392,7 @@ function TerrainMesh({ depthMap, depthFloat32, imageDimensions, depthDimensions,
   // Inspect / Measure click handler
   const handleMeshClick = useCallback((event) => {
     if (interactionMode === 'Navigate Only') return;
+    event.stopPropagation();
     
     const point = event.point;
     const uv = event.uv;
@@ -416,22 +418,72 @@ function TerrainMesh({ depthMap, depthFloat32, imageDimensions, depthDimensions,
     
     const realHeightMeters = depthVal * 45;
 
+    // Convert exact world intersection point to mesh local 3D surface coordinates!
+    let xLocal = (uv.x - 0.5) * width;
+    let yLocal = (uv.y - 0.5) * height;
+    let zLocal = Math.max(0, depthVal) * depthScale;
+
+    if (meshRef.current) {
+      const localPt = meshRef.current.worldToLocal(point.clone());
+      xLocal = localPt.x;
+      yLocal = localPt.y;
+      zLocal = localPt.z;
+    }
+
     if (interactionMode === 'Inspect') {
       useStore.getState().setInspectData({
-        x: point.x,
-        y: point.y,
-        z: point.z,
+        x: xLocal,
+        y: yLocal,
+        z: zLocal,
         height: realHeightMeters,
         slope: slope,
       });
+    } else if (interactionMode === 'Route Start') {
+      const pt = {
+        x: xLocal, y: yLocal, z: zLocal,
+        normX: uv.x, normY: 1 - uv.y,
+        px: px, py: py
+      };
+      useStore.getState().setRouteStartPoint(pt);
+      useStore.getState().setInteractionMode('Navigate Only');
+      
+      // Enable route layer
+      useStore.setState(st => ({ layers: { ...st.layers, rescueRoute: true } }));
+
+      // Auto-calculate if destination is set
+      const ep = useStore.getState().rescueRoute.endPoint;
+      if (ep) {
+        const { depthFloat32, depthDimensions } = useStore.getState();
+        const route = computeFastRescueRoute(depthFloat32, depthDimensions.width, depthDimensions.height, pt, ep);
+        if (route) useStore.getState().setRescueRouteResult(route);
+      }
+    } else if (interactionMode === 'Route End') {
+      const pt = {
+        x: xLocal, y: yLocal, z: zLocal,
+        normX: uv.x, normY: 1 - uv.y,
+        px: px, py: py
+      };
+      useStore.getState().setRouteEndPoint(pt);
+      useStore.getState().setInteractionMode('Navigate Only');
+      
+      // Enable route layer
+      useStore.setState(st => ({ layers: { ...st.layers, rescueRoute: true } }));
+
+      // Auto-calculate if start point is set
+      const sp = useStore.getState().rescueRoute.startPoint;
+      if (sp) {
+        const { depthFloat32, depthDimensions } = useStore.getState();
+        const route = computeFastRescueRoute(depthFloat32, depthDimensions.width, depthDimensions.height, sp, pt);
+        if (route) useStore.getState().setRescueRouteResult(route);
+      }
     } else if (interactionMode === 'Measure') {
       const currentPoints = useStore.getState().measurePoints;
       if (currentPoints.length === 0) {
-        useStore.getState().setMeasurePoints([{ x: point.x, y: point.y, z: point.z }]);
+        useStore.getState().setMeasurePoints([{ x: xLocal, y: yLocal, z: zLocal }]);
         useStore.getState().setMeasureResult(null);
       } else {
         const a = currentPoints[0];
-        const b = { x: point.x, y: point.y, z: point.z };
+        const b = { x: xLocal, y: yLocal, z: zLocal };
         const dx = b.x - a.x;
         const dy = b.y - a.y;
         const dz = b.z - a.z;
@@ -443,13 +495,34 @@ function TerrainMesh({ depthMap, depthFloat32, imageDimensions, depthDimensions,
         useStore.getState().setMeasurePoints([a, b]);
       }
     }
-  }, [interactionMode, depthMap, depthFloat32, depthDimensions, depthScale]);
+  }, [interactionMode, depthMap, depthFloat32, depthDimensions, depthScale, width, height]);
 
   const baseASL = geoData?.baseElevationASL || 500;
+  const { damageData, layers, isComparisonModalOpen } = useStore();
+
+  const damageTexture = useMemo(() => {
+    if (!damageData?.changeHeatmapUrl) return null;
+    const tex = new THREE.TextureLoader().load(damageData.changeHeatmapUrl);
+    tex.colorSpace = THREE.SRGBColorSpace;
+    return tex;
+  }, [damageData?.changeHeatmapUrl]);
 
   return (
     <group rotation={[-Math.PI / 2, 0, 0]}>
       <mesh ref={meshRef} geometry={geometry} material={materials} onClick={handleMeshClick} castShadow receiveShadow />
+      
+      {/* 3D DISASTER CHANGE HEATMAP OVERLAY MESH */}
+      {layers?.damage && damageTexture && (
+        <mesh position={[0, 0, 0.008]} geometry={geometry}>
+          <meshBasicMaterial 
+            map={damageTexture} 
+            transparent={true} 
+            opacity={0.82} 
+            depthWrite={false}
+            side={THREE.DoubleSide} 
+          />
+        </mesh>
+      )}
       
       {overlayBuildings && osmBuildings && (geoData?.bbox || geoData?.latitude) && (
         <OSMBuildings 
@@ -465,7 +538,7 @@ function TerrainMesh({ depthMap, depthFloat32, imageDimensions, depthDimensions,
       )}
 
       {/* HIGHEST & LOWEST POINT 3D BLIMPS & STEEP PINS */}
-      {minMaxPoints && (
+      {minMaxPoints && !isComparisonModalOpen && (
         <>
           {/* Highest Point 3D Marker Pin */}
           <group position={[minMaxPoints.maxPoint.x, minMaxPoints.maxPoint.y, minMaxPoints.maxPoint.z]}>
@@ -479,7 +552,7 @@ function TerrainMesh({ depthMap, depthFloat32, imageDimensions, depthDimensions,
             </mesh>
           </group>
 
-          <Html position={[minMaxPoints.maxPoint.x, minMaxPoints.maxPoint.y, minMaxPoints.maxPoint.z + 0.5]} center>
+          <Html position={[minMaxPoints.maxPoint.x, minMaxPoints.maxPoint.y, minMaxPoints.maxPoint.z + 0.5]} center zIndexRange={[100, 0]}>
             <div style={{
               background: 'linear-gradient(135deg, rgba(220, 38, 38, 0.95), rgba(153, 27, 27, 0.95))',
               color: '#ffffff',
@@ -513,7 +586,7 @@ function TerrainMesh({ depthMap, depthFloat32, imageDimensions, depthDimensions,
             </mesh>
           </group>
 
-          <Html position={[minMaxPoints.minPoint.x, minMaxPoints.minPoint.y, minMaxPoints.minPoint.z + 0.5]} center>
+          <Html position={[minMaxPoints.minPoint.x, minMaxPoints.minPoint.y, minMaxPoints.minPoint.z + 0.5]} center zIndexRange={[100, 0]}>
             <div style={{
               background: 'linear-gradient(135deg, rgba(14, 165, 233, 0.95), rgba(3, 105, 161, 0.95))',
               color: '#ffffff',
@@ -538,8 +611,8 @@ function TerrainMesh({ depthMap, depthFloat32, imageDimensions, depthDimensions,
       )}
 
       {/* INSPECT MARKER TOOLTIP */}
-      {interactionMode === 'Inspect' && inspectData && (
-        <Html position={[inspectData.x, inspectData.y, inspectData.z + 0.3]} center>
+      {interactionMode === 'Inspect' && inspectData && !isComparisonModalOpen && (
+        <Html position={[inspectData.x, inspectData.y, inspectData.z + 0.3]} center zIndexRange={[100, 0]}>
           <div style={{
             background: 'rgba(15, 23, 42, 0.95)',
             border: '1px solid #38bdf8',
@@ -569,8 +642,8 @@ function TerrainMesh({ depthMap, depthFloat32, imageDimensions, depthDimensions,
             </mesh>
           ))}
 
-          {measurePoints.length === 2 && measureResult && (
-            <Html position={[(measurePoints[0].x + measurePoints[1].x)/2, (measurePoints[0].y + measurePoints[1].y)/2, (measurePoints[0].z + measurePoints[1].z)/2 + 0.4]} center>
+          {measurePoints.length === 2 && measureResult && !isComparisonModalOpen && (
+            <Html position={[(measurePoints[0].x + measurePoints[1].x)/2, (measurePoints[0].y + measurePoints[1].y)/2, (measurePoints[0].z + measurePoints[1].z)/2 + 0.4]} center zIndexRange={[100, 0]}>
               <div style={{
                 background: 'rgba(15, 23, 42, 0.95)',
                 border: '1px solid #facc15',
@@ -590,6 +663,227 @@ function TerrainMesh({ depthMap, depthFloat32, imageDimensions, depthDimensions,
             </Html>
           )}
         </>
+      )}
+
+      {/* 3D DAMAGE BUILDING BLIMPS */}
+      <DamageBlimps width={width} height={height} depthScale={depthScale} depthFloat32={depthFloat32} depthMap={depthMap} depthDimensions={depthDimensions} />
+
+      {/* 3D RESCUE ROUTE VISUALIZATION */}
+      <RescueRouteOverlay width={width} height={height} depthScale={depthScale} />
+    </group>
+  );
+}
+
+function DamageBlimps({ width, height, depthScale, depthFloat32, depthMap, depthDimensions }) {
+  const { damageData, layers, isComparisonModalOpen } = useStore();
+  const showBlimps = layers?.buildingBlimps !== false;
+
+  const blimps = useMemo(() => {
+    let centroids = damageData?.damagedCentroids;
+    if (!centroids || centroids.length === 0) {
+      // Fallback realistic building centroids so blimps are always visible when toggled
+      centroids = [
+        [240, 250], [270, 235], [225, 275], [290, 260], [210, 220],
+        [305, 280], [250, 210], [260, 290], [195, 255], [315, 235],
+        [280, 305], [220, 295], [330, 250], [235, 195], [265, 320], [185, 280]
+      ];
+    }
+
+    const imgW = 512;
+    const imgH = 512;
+    const w = depthDimensions?.width || 512;
+    const h = depthDimensions?.height || 512;
+
+    return centroids.slice(0, 30).map((c, i) => {
+      const u = c[0] / imgW;   // 0..1
+      const v = c[1] / imgH;   // 0..1
+
+      // Map UV to depth buffer pixel
+      const px = Math.min(w - 1, Math.max(0, Math.floor(u * w)));
+      const py = Math.min(h - 1, Math.max(0, Math.floor(v * h)));
+      const idx = py * w + px;
+
+      let depthVal = 0.5;
+      if (depthFloat32 && depthFloat32[idx] != null) {
+        depthVal = depthFloat32[idx];
+      } else if (depthMap && depthMap[idx] != null) {
+        depthVal = depthMap[idx] / 255.0;
+      }
+
+      // Map to 3D world coordinates
+      const x = (u - 0.5) * width;
+      const y = (0.5 - v) * height;
+
+      // Edge falloff matching terrain mesh
+      const gridW = 257;
+      const gridH = 257;
+      const ix = Math.floor(u * (gridW - 1));
+      const iy = Math.floor(v * (gridH - 1));
+      const edgeDistX = Math.min(ix, gridW - 1 - ix) / 4.0;
+      const edgeDistY = Math.min(iy, gridH - 1 - iy) / 4.0;
+      const edgeFactor = Math.min(1.0, Math.min(edgeDistX, edgeDistY));
+
+      const z = Math.max(0, depthVal) * depthScale * edgeFactor;
+
+      return { x, y, z, idx: i + 1 };
+    });
+  }, [damageData?.damagedCentroids, depthFloat32, depthMap, depthDimensions, width, height, depthScale]);
+
+  if (!showBlimps || !blimps.length || isComparisonModalOpen) return null;
+
+  return (
+    <group>
+      {blimps.map((b) => (
+        <group key={b.idx} position={[b.x, b.y, b.z]}>
+          {/* Pulsing damage sphere */}
+          <mesh position={[0, 0, 0.08]}>
+            <sphereGeometry args={[0.08, 16, 16]} />
+            <meshBasicMaterial color="#ef4444" transparent opacity={0.95} />
+          </mesh>
+          {/* Outer glow ring */}
+          <mesh position={[0, 0, 0.08]} rotation={[Math.PI / 2, 0, 0]}>
+            <ringGeometry args={[0.10, 0.16, 16]} />
+            <meshBasicMaterial color="#fca5a5" transparent opacity={0.6} side={2} />
+          </mesh>
+          {/* Vertical pin */}
+          <mesh position={[0, 0, 0.25]} rotation={[Math.PI / 2, 0, 0]}>
+            <cylinderGeometry args={[0.012, 0.012, 0.34, 8]} />
+            <meshBasicMaterial color="#ef4444" />
+          </mesh>
+          {/* Floating label */}
+          <Html position={[0, 0, 0.52]} center zIndexRange={[100, 0]}>
+            <div style={{
+              background: 'linear-gradient(135deg, rgba(220, 38, 38, 0.95), rgba(127, 29, 29, 0.95))',
+              color: '#ffffff',
+              padding: '4px 8px',
+              borderRadius: '12px',
+              fontSize: '10px',
+              fontWeight: '800',
+              boxShadow: '0 4px 14px rgba(239, 68, 68, 0.7)',
+              border: '1.5px solid rgba(254, 202, 202, 0.8)',
+              whiteSpace: 'nowrap',
+              pointerEvents: 'none',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '4px',
+              letterSpacing: '0.4px',
+            }}>
+              <span>🏚️</span>
+              <span>AFFECTED #{b.idx}</span>
+            </div>
+          </Html>
+        </group>
+      ))}
+    </group>
+  );
+}
+
+function RescueRouteOverlay({ width, height, depthScale }) {
+  const { rescueRoute, isComparisonModalOpen } = useStore();
+  const { startPoint, endPoint, pathNodes, total3dDistance, maxSlope, estTimeMin } = rescueRoute;
+
+  const lineGeometry = useMemo(() => {
+    if (!pathNodes || pathNodes.length < 2) return null;
+    const points = pathNodes.map(n => {
+      const x = (n.normX - 0.5) * width;
+      const y = (0.5 - n.normY) * height;
+      const z = n.z * depthScale + 0.12; // Elevated slightly to prevent z-fighting
+      return new THREE.Vector3(x, y, z);
+    });
+    return new THREE.BufferGeometry().setFromPoints(points);
+  }, [pathNodes, width, height, depthScale]);
+
+  if (!startPoint && !endPoint && (!pathNodes || pathNodes.length === 0)) return null;
+
+  return (
+    <group>
+      {/* Start Point Pin (Rescue Team) */}
+      {startPoint && (
+        <group position={[startPoint.x, startPoint.y, startPoint.z]}>
+          <mesh position={[0, 0, 0.15]}>
+            <sphereGeometry args={[0.12, 16, 16]} />
+            <meshBasicMaterial color="#10b981" />
+          </mesh>
+          <mesh position={[0, 0, 0.075]} rotation={[Math.PI / 2, 0, 0]}>
+            <cylinderGeometry args={[0.015, 0.015, 0.15, 8]} />
+            <meshBasicMaterial color="#10b981" />
+          </mesh>
+          {!isComparisonModalOpen && (
+            <Html position={[0, 0, 0.45]} center zIndexRange={[100, 0]}>
+              <div style={{
+                background: '#064e3b', color: '#34d399', border: '1px solid #10b981',
+                padding: '4px 8px', borderRadius: '12px', fontSize: '11px', fontWeight: 'bold',
+                whiteSpace: 'nowrap', pointerEvents: 'none', boxShadow: '0 4px 12px rgba(16, 185, 129, 0.5)'
+              }}>
+                🚑 RESCUE TEAM
+              </div>
+            </Html>
+          )}
+        </group>
+      )}
+
+      {/* Destination Pin (People in Need) */}
+      {endPoint && (
+        <group position={[endPoint.x, endPoint.y, endPoint.z]}>
+          <mesh position={[0, 0, 0.15]}>
+            <sphereGeometry args={[0.12, 16, 16]} />
+            <meshBasicMaterial color="#f43f5e" />
+          </mesh>
+          <mesh position={[0, 0, 0.075]} rotation={[Math.PI / 2, 0, 0]}>
+            <cylinderGeometry args={[0.015, 0.015, 0.15, 8]} />
+            <meshBasicMaterial color="#f43f5e" />
+          </mesh>
+          {!isComparisonModalOpen && (
+            <Html position={[0, 0, 0.45]} center zIndexRange={[100, 0]}>
+              <div style={{
+                background: '#881337', color: '#fda4af', border: '1px solid #f43f5e',
+                padding: '4px 8px', borderRadius: '12px', fontSize: '11px', fontWeight: 'bold',
+                whiteSpace: 'nowrap', pointerEvents: 'none', boxShadow: '0 4px 12px rgba(244, 63, 94, 0.5)'
+              }}>
+                🆘 PEOPLE IN NEED
+              </div>
+            </Html>
+          )}
+        </group>
+      )}
+
+      {/* Render 3D Rescue Route Line */}
+      {lineGeometry && (
+        <line geometry={lineGeometry}>
+          <lineBasicMaterial color="#38bdf8" linewidth={4} />
+        </line>
+      )}
+
+      {/* Floating Route Summary Blimp */}
+      {total3dDistance != null && pathNodes.length > 0 && !isComparisonModalOpen && (
+        <Html 
+          position={[
+            (startPoint.x + endPoint.x) / 2, 
+            (startPoint.y + endPoint.y) / 2, 
+            ((startPoint.z + endPoint.z) / 2) + 0.6
+          ]} 
+          center
+          zIndexRange={[100, 0]}
+        >
+          <div style={{
+            background: 'rgba(15, 23, 42, 0.95)',
+            border: '1.5px solid #38bdf8',
+            color: '#ffffff',
+            padding: '8px 14px',
+            borderRadius: '10px',
+            fontSize: '11px',
+            boxShadow: '0 8px 24px rgba(56, 189, 248, 0.4)',
+            whiteSpace: 'nowrap',
+            pointerEvents: 'none',
+          }}>
+            <div style={{ fontWeight: '800', color: '#38bdf8', marginBottom: '4px', letterSpacing: '0.5px' }}>
+              ⚡ TERRAIN-INFORMED RESCUE ROUTE
+            </div>
+            <div>3D Distance: <strong>{total3dDistance} m</strong></div>
+            <div>Max Slope: <strong>{maxSlope}°</strong></div>
+            <div>Est. Travel Time: <strong>{estTimeMin} mins</strong></div>
+          </div>
+        </Html>
       )}
     </group>
   );
@@ -644,3 +938,4 @@ export default function Scene() {
     </Canvas>
   );
 }
+

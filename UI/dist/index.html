@@ -1,14 +1,48 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" class="h-full bg-[#05020d]">
   <head>
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/vite.svg" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>DEPTHWIZARD</title>
-    <script type="module" crossorigin src="/assets/index-B0WpMWwz.js"></script>
-    <link rel="stylesheet" crossorigin href="/assets/index-CdZqLz5I.css">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <title>DepthWizard — Single-View Terrain 3D</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;800&display=block" rel="stylesheet">
+    <!-- Tailwind CSS v3 with Plugins -->
+    <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+    <script>
+      tailwind.config = {
+        theme: {
+          extend: {
+            colors: {
+              cosmic: {
+                950: '#05020d',
+                900: '#0a0518',
+                850: '#0e0824',
+                800: '#160c38',
+                700: '#261458',
+              },
+              neon: {
+                cyan: '#38bdf8',
+                violet: '#a855f7',
+                purple: '#818cf8',
+                emerald: '#34d399',
+              }
+            },
+            fontFamily: {
+              mono: ['ui-monospace', 'SFMono-Regular', 'Menlo', 'Monaco', 'Consolas', 'monospace'],
+              sans: ['Plus Jakarta Sans', 'Inter', 'system-ui', '-apple-system', 'BlinkMacSystemFont', 'Segoe UI', 'Roboto', 'sans-serif'],
+            }
+          }
+        }
+      }
+    </script>
+    <script type="module" crossorigin src="/assets/index-Cw_uM7XC.js"></script>
+    <link rel="stylesheet" crossorigin href="/assets/index-BlWRk7Y6.css">
   </head>
-  <body>
-    <div id="root"></div>
+  <body class="h-full text-slate-100 font-sans antialiased overflow-x-hidden bg-[#05020d]">
+    <div id="root" class="h-full"></div>
   </body>
 </html>
+
+

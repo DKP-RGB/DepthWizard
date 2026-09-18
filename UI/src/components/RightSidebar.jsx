@@ -10,12 +10,40 @@ export default function RightSidebar() {
     geoData, stats, calibration, elevationMode, imageFile,
     depthFloat32, depthDimensions,
     inspectData, measureResult, minMaxPoints,
+    rescueRoute, damageData, predictiveRisk
   } = useStore();
 
   const isMetric = elevationMode === 'metric';
 
-  const handleDownloadMesh = (format) => {
-    window.dispatchEvent(new CustomEvent('download-mesh', { detail: { format } }));
+  const handleDownloadPLY = () => {
+    const { depthFloat32, depthDimensions, imageDimensions, verticalExaggeration } = useStore.getState();
+    if (!depthFloat32 || !depthDimensions.width) {
+      alert('No height data available for PLY export.');
+      return;
+    }
+    const w = depthDimensions.width;
+    const h = depthDimensions.height;
+    const aspect = (imageDimensions.width || 1) / (imageDimensions.height || 1);
+    const meshW = 10;
+    const meshH = 10 / aspect;
+    const dScale = 0.5 * verticalExaggeration;
+
+    let plyContent = `ply\nformat ascii 1.0\nelement vertex ${w * h}\nproperty float x\nproperty float y\nproperty float z\nend_header\n`;
+    for (let py = 0; py < h; py++) {
+      for (let px = 0; px < w; px++) {
+        const idx = py * w + px;
+        const val = depthFloat32[idx] || 0;
+        const x = (px / (w - 1) - 0.5) * meshW;
+        const y = (0.5 - py / (h - 1)) * meshH;
+        const z = val * dScale;
+        plyContent += `${x.toFixed(4)} ${y.toFixed(4)} ${z.toFixed(4)}\n`;
+      }
+    }
+    const blob = new Blob([plyContent], { type: 'text/plain' });
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(blob);
+    link.download = 'terrain_pointcloud.ply';
+    link.click();
   };
 
   const handleDownloadNPY = () => {
@@ -62,39 +90,7 @@ export default function RightSidebar() {
 
   return (
     <div className="sidebar right-sidebar">
-      <div className="panel-section">
-        <div className="panel-title">3D DISPLAY MODES</div>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px', marginBottom: '12px' }}>
-          <button 
-            className={`btn-toggle ${viewMode === 'RGB' ? 'active' : ''}`}
-            onClick={() => setViewMode('RGB')}
-            style={{ padding: '6px', fontSize: '0.75rem', textAlign: 'center' }}
-          >
-            📷 RGB Texture
-          </button>
-          <button 
-            className={`btn-toggle ${viewMode === 'Depth' ? 'active' : ''}`}
-            onClick={() => setViewMode('Depth')}
-            style={{ padding: '6px', fontSize: '0.75rem', textAlign: 'center' }}
-          >
-            🏁 Depth Map
-          </button>
-          <button 
-            className={`btn-toggle ${viewMode === 'Wireframe' ? 'active' : ''}`}
-            onClick={() => setViewMode('Wireframe')}
-            style={{ padding: '6px', fontSize: '0.75rem', textAlign: 'center' }}
-          >
-            🌐 Wireframe
-          </button>
-          <button 
-            className={`btn-toggle ${viewMode === 'Contour' ? 'active' : ''}`}
-            onClick={() => setViewMode('Contour')}
-            style={{ padding: '6px', fontSize: '0.75rem', textAlign: 'center' }}
-          >
-            📊 Contour
-          </button>
-        </div>
-      </div>
+
 
       <div className="panel-section">
         <div className="panel-title">3D HEIGHT & CONTROLS</div>
@@ -165,6 +161,94 @@ export default function RightSidebar() {
         </div>
       )}
 
+      {/* Disaster Impact Analytics Readout Card */}
+      {damageData && damageData.totalChangePct != null && (
+        <div className="panel-section" style={{ background: 'rgba(239, 68, 68, 0.08)', borderRadius: '6px', border: '1px solid rgba(239, 68, 68, 0.35)' }}>
+          <div className="panel-title" style={{ color: '#ef4444' }}>🚨 DISASTER IMPACT ANALYTICS</div>
+          <div className="key-value-row">
+            <span className="key">Disaster Category</span>
+            <span className="value" style={{ fontWeight: '800', color: '#f8fafc' }}>
+              {damageData.disasterType || 'Disaster Assessment'}
+            </span>
+          </div>
+          <div className="key-value-row">
+            <span className="key">Disaster Status</span>
+            <span className="value" style={{ fontWeight: '800', color: damageData.highDamagePct > 15 ? '#ef4444' : '#f59e0b' }}>
+              {damageData.damageStatus}
+            </span>
+          </div>
+          <div className="key-value-row">
+            <span className="key">Damaged / Submerged Structures</span>
+            <span className="value" style={{ fontWeight: 'bold', color: '#ef4444' }}>
+              {damageData.buildingCount} footprint(s)
+            </span>
+          </div>
+          <div className="key-value-row">
+            <span className="key">Affected Population</span>
+            <span className="value" style={{ fontWeight: 'bold', color: '#fbbf24' }}>
+              ~{damageData.affectedPopulation} residents
+            </span>
+          </div>
+          <div className="key-value-row">
+            <span className="key">Impact Surface Area</span>
+            <span className="value" style={{ color: '#60a5fa', fontWeight: 'bold' }}>
+              {damageData.impactAreaSqm ? `${damageData.impactAreaSqm.toLocaleString()} m² (${damageData.impactAreaHectares} ha)` : `${damageData.totalChangePct}% footprint`}
+            </span>
+          </div>
+          <div className="key-value-row">
+            <span className="key">Est. Damage Cost (INR)</span>
+            <span className="value" style={{ fontWeight: 'bold', color: '#38bdf8' }}>
+              ₹ {damageData.costInrLakhs} Lakhs
+            </span>
+          </div>
+          <div className="key-value-row">
+            <span className="key">Est. Damage Cost (USD)</span>
+            <span className="value" style={{ color: '#94a3b8' }}>
+              ${damageData.costUsd?.toLocaleString()} USD
+            </span>
+          </div>
+          {rescueRoute.estTimeMin != null && (
+            <div className="key-value-row" style={{ marginTop: '4px', paddingTop: '4px', borderTop: '1px dashed rgba(239, 68, 68, 0.3)' }}>
+              <span className="key" style={{ color: '#34d399', fontWeight: 'bold' }}>Rescue Response Time</span>
+              <span className="value" style={{ fontWeight: 'bold', color: '#34d399' }}>
+                ⚡ {rescueRoute.estTimeMin} mins
+              </span>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Rescue Route Analytics Readout */}
+      {rescueRoute.total3dDistance != null && (
+        <div className="panel-section" style={{ background: 'rgba(16, 185, 129, 0.08)', borderRadius: '6px', border: '1px solid rgba(16, 185, 129, 0.3)' }}>
+          <div className="panel-title" style={{ color: '#34d399' }}>🚑 RESCUE ROUTE ANALYTICS</div>
+          <div className="key-value-row">
+            <span className="key">3D Path Length</span>
+            <span className="value" style={{ fontWeight: 'bold', color: '#34d399' }}>{rescueRoute.total3dDistance} m</span>
+          </div>
+          <div className="key-value-row">
+            <span className="key">Horizontal Distance</span>
+            <span className="value">{rescueRoute.horizDistance} m</span>
+          </div>
+          <div className="key-value-row">
+            <span className="key">Elevation Gain (ΔZ)</span>
+            <span className="value">+{rescueRoute.elevGain} m</span>
+          </div>
+          <div className="key-value-row">
+            <span className="key">Max Slope</span>
+            <span className="value" style={{ color: rescueRoute.maxSlope > 30 ? '#ef4444' : '#facc15' }}>
+              {rescueRoute.maxSlope}°
+            </span>
+          </div>
+          <div className="key-value-row">
+            <span className="key">Est. Response Time</span>
+            <span className="value" style={{ color: '#38bdf8', fontWeight: 'bold' }}>{rescueRoute.estTimeMin} mins</span>
+          </div>
+        </div>
+      )}
+
+
+
       {/* Inspect Results */}
       {inspectData && (
         <div className="panel-section" style={{ borderLeft: '3px solid #38bdf8' }}>
@@ -206,30 +290,17 @@ export default function RightSidebar() {
       )}
 
       <div className="panel-section">
-        <div className="panel-title">DOWNLOAD</div>
+        <div className="panel-title">EXPORTS & DOWNLOADS</div>
         
         <div className="download-buttons">
           <button className="dl-btn" onClick={() => downloadCanvas('depth_render.png')}><span>Depth PNG</span> <Download size={14}/></button>
-          <button className="dl-btn" onClick={() => downloadCanvas('color_render.png')}><span>Depth PNG (color)</span> <Download size={14}/></button>
-          <button className="dl-btn" onClick={handleDownloadNPY}><span>Depth NPY</span> <Download size={14}/></button>
+          <button className="dl-btn" onClick={() => downloadCanvas('color_render.png')}><span>Color Depth PNG</span> <Download size={14}/></button>
+          <button className="dl-btn" onClick={handleDownloadNPY}><span>Raw Float32 NPY</span> <Download size={14}/></button>
           <button className="dl-btn" onClick={() => handleDownloadMesh('obj')}><span>3D Mesh (OBJ)</span> <Download size={14}/></button>
           <button className="dl-btn" onClick={() => handleDownloadMesh('glb')}><span>3D Mesh (GLB)</span> <Download size={14}/></button>
-          <button className="dl-btn" onClick={() => alert('Point cloud export coming soon.')}><span>Point Cloud (PLY)</span> <Download size={14}/></button>
+          <button className="dl-btn" onClick={handleDownloadPLY}><span>Point Cloud (PLY)</span> <Download size={14}/></button>
           <button className="dl-btn" onClick={() => downloadCanvas('contour_render.png')}><span>Contour PNG</span> <Download size={14}/></button>
           <button className="dl-btn" onClick={() => downloadMetadata(geoData, stats)}><span>Metadata JSON</span> <Download size={14}/></button>
-          {isMetric && geoData.isGeoreferenced && (
-            <button className="dl-btn primary" onClick={() => {
-              alert('DSM GeoTIFF export requires rasterio backend. Use NPY export for raw elevation data.');
-            }}>
-              <span>DSM GeoTIFF</span>
-              <span style={{fontSize:'0.7rem', opacity:0.7}}>Requires backend</span>
-            </button>
-          )}
-          {!isMetric && (
-            <div className="info-box mt-2" style={{fontSize:'0.7rem'}}>
-              DSM GeoTIFF unavailable — metric calibration required.
-            </div>
-          )}
         </div>
       </div>
 
@@ -252,6 +323,11 @@ export default function RightSidebar() {
           <div className="slope-item"><span className="swatch c40"></span> 40°</div>
           <div className="slope-item"><span className="swatch c50"></span> 50°+</div>
         </div>
+      </div>
+
+      {/* Scientific Disclaimer */}
+      <div className="panel-section" style={{ background: 'rgba(15, 23, 42, 0.4)', fontSize: '0.65rem', color: '#94a3b8', fontStyle: 'italic', borderTop: '1px solid var(--border-color)' }}>
+        ⚠️ <strong>Scientific Disclaimer</strong>: AI-derived terrain estimates are decision-support indicators. Absolute elevations require reference DEM or ground control calibration.
       </div>
     </div>
   );

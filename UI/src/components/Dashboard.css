@@ -83,22 +83,30 @@
 
 /* Sidebar shared styles */
 .sidebar {
-  width: 300px;
+  width: 320px;
   background-color: var(--panel-bg);
   border-right: 1px solid var(--border-color);
   border-left: 1px solid var(--border-color);
   display: flex;
   flex-direction: column;
-  overflow-y: auto;
+  overflow-y: scroll;
   font-size: 0.85rem;
+  scrollbar-width: thin;
+  scrollbar-color: var(--accent-blue) var(--panel-bg);
 }
 
 .sidebar::-webkit-scrollbar {
-  width: 6px;
+  width: 8px;
+}
+.sidebar::-webkit-scrollbar-track {
+  background: rgba(17, 20, 29, 0.9);
 }
 .sidebar::-webkit-scrollbar-thumb {
-  background: var(--border-color);
-  border-radius: 3px;
+  background: linear-gradient(180deg, #3b82f6 0%, #06b6d4 100%);
+  border-radius: 4px;
+}
+.sidebar::-webkit-scrollbar-thumb:hover {
+  background: #2563eb;
 }
 
 .panel-section {
